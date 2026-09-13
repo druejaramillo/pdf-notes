@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -11,7 +13,7 @@ func TestRenderMathpixMarkdown(t *testing.T) {
 \author{Author}
 
 \section{Vectors}
-One sentence. A second with \(x^2\).
+One sentence. A second with \(x^2\) and \(y^2\).
 \[
 x^2 + y^2
 \]
@@ -22,10 +24,10 @@ A final sentence.
 `
 	want := `# Vectors
 - One sentence
-  - A second with \(x^2\)
-\[
+  - A second with $x^2$ and $y^2$
+$$
 x^2 + y^2
-\]
+$$
 ## Examples
 - A final sentence
 - ![Figure](figure.png)
@@ -34,6 +36,14 @@ x^2 + y^2
 
 	if got := renderMathpixMarkdown(input); got != want {
 		t.Fatalf("renderMathpixMarkdown() mismatch\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
+func TestConvertInlineMathLeavesUnmatchedDelimiterAlone(t *testing.T) {
+	input := `A \(matched\) and \(unmatched`
+	want := `A $matched$ and \(unmatched`
+	if got := convertInlineMath(input); got != want {
+		t.Fatalf("convertInlineMath() = %q, want %q", got, want)
 	}
 }
 
@@ -66,5 +76,17 @@ func TestWriteNote(t *testing.T) {
 	}
 	if _, err := writeNote(vault, "../outside", "unsafe", false); err == nil {
 		t.Fatal("writeNote() accepted a path outside the vault")
+	}
+}
+
+func TestSourceMarkdownNamesMissingCredentials(t *testing.T) {
+	t.Setenv("MATHPIX_APP_ID", "")
+	t.Setenv("MATHPIX_APP_KEY", "")
+	_, err := sourceMarkdown(context.Background(), "chapter.pdf", nil)
+	if err == nil {
+		t.Fatal("sourceMarkdown() accepted missing Mathpix credentials")
+	}
+	if !strings.Contains(err.Error(), "MATHPIX_APP_ID") || !strings.Contains(err.Error(), "MATHPIX_APP_KEY") {
+		t.Fatalf("sourceMarkdown() error = %q", err)
 	}
 }

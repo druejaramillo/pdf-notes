@@ -13,6 +13,7 @@ import (
 
 func TestMathpixConvert(t *testing.T) {
 	var deleted bool
+	var progress []string
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.Method + " " + request.URL.Path {
 		case "POST /v3/pdf":
@@ -58,6 +59,9 @@ func TestMathpixConvert(t *testing.T) {
 		baseURL:      server.URL + "/v3",
 		httpClient:   server.Client(),
 		pollInterval: time.Millisecond,
+		report: func(message string) {
+			progress = append(progress, message)
+		},
 	}
 
 	markdown, err := client.convert(context.Background(), path)
@@ -69,5 +73,8 @@ func TestMathpixConvert(t *testing.T) {
 	}
 	if !deleted {
 		t.Fatal("convert() did not delete the uploaded Mathpix PDF")
+	}
+	if len(progress) < 4 {
+		t.Fatalf("convert() reported %d progress messages, want at least 4", len(progress))
 	}
 }

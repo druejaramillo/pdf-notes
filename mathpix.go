@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,14 +23,20 @@ type mathpixClient struct {
 	baseURL      string
 	httpClient   *http.Client
 	pollInterval time.Duration
+	report       func(string)
 }
 
 func defaultMathpixClient(appID, appKey string) mathpixClient {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+	transport.TLSHandshakeTimeout = 10 * time.Second
+	transport.ResponseHeaderTimeout = 30 * time.Second
+
 	return mathpixClient{
 		appID:        appID,
 		appKey:       appKey,
 		baseURL:      mathpixAPIURL,
-		httpClient:   &http.Client{Timeout: 30 * time.Second},
+		httpClient:   &http.Client{Transport: transport, Timeout: 2 * time.Minute},
 		pollInterval: 500 * time.Millisecond,
 	}
 }
@@ -39,9 +46,11 @@ func (c mathpixClient) convert(ctx context.Context, path string) (markdown strin
 	if err != nil {
 		return "", err
 	}
+	c.progress("Mathpix accepted the PDF; waiting for conversion...")
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		c.progress("Removing the uploaded PDF from Mathpix...")
 		cleanupErr := c.delete(cleanupCtx, pdfID)
 		if cleanupErr != nil && err == nil {
 			err = fmt.Errorf("delete Mathpix PDF %q: %w", pdfID, cleanupErr)
@@ -55,6 +64,7 @@ func (c mathpixClient) convert(ctx context.Context, path string) (markdown strin
 }
 
 func (c mathpixClient) upload(ctx context.Context, path string) (string, error) {
+	c.progress("Preparing PDF upload...")
 	file, err := os.Open(path)
 	if err != nil {
 		return "", fmt.Errorf("open PDF %q: %w", path, err)
@@ -83,6 +93,7 @@ func (c mathpixClient) upload(ctx context.Context, path string) (string, error) 
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	c.setAuth(req)
+	c.progress("Sending PDF to Mathpix...")
 	response, err := c.do(req)
 	if err != nil {
 		return "", fmt.Errorf("upload PDF to Mathpix: %w", err)
@@ -120,6 +131,7 @@ func (c mathpixClient) waitForCompletion(ctx context.Context, pdfID string) erro
 			}
 			switch status {
 			case "completed":
+				c.progress("Mathpix conversion completed; downloading Markdown...")
 				return nil
 			case "error":
 				return fmt.Errorf("Mathpix failed to process PDF %q", pdfID)
@@ -203,4 +215,10 @@ func (c mathpixClient) do(req *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("Mathpix returned HTTP %d", response.StatusCode)
 	}
 	return nil, fmt.Errorf("Mathpix returned HTTP %d: %s", response.StatusCode, message)
+}
+
+func (c mathpixClient) progress(message string) {
+	if c.report != nil {
+		c.report(message)
+	}
 }

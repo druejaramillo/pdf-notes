@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// renderMathpixMarkdown keeps Mathpix's LaTex math delimiters intact because Obsidian renders them natively.
+// renderMathpixMarkdown converts Mathpix's LaTex math delimiters to Obsidian's Markdown syntax.
 func renderMathpixMarkdown(markdown string) string {
 	lines := stripMathpixTitle(strings.Split(markdown, "\n"))
 	output := make([]string, 0, len(lines))
@@ -15,29 +15,58 @@ func renderMathpixMarkdown(markdown string) string {
 
 	for _, line := range lines {
 		if inBlockEquation {
-			output = append(output, line)
 			if line == `\]` {
+				output = append(output, "$$")
 				inBlockEquation = false
+				continue
 			}
+			output = append(output, line)
 			continue
 		}
 		if line == `\[` {
-			output = append(output, line)
+			output = append(output, "$$")
 			inBlockEquation = true
 			continue
 		}
 		if heading, ok := markdownHeading(line); ok {
-			output = append(output, heading)
+			output = append(output, convertInlineMath(heading))
 			continue
 		}
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "\\") {
-			output = append(output, line)
+			output = append(output, convertInlineMath(line))
 			continue
 		}
-		output = append(output, bulletize(line)...)
+		for _, bullet := range bulletize(line) {
+			output = append(output, convertInlineMath(bullet))
+		}
 	}
 
 	return strings.Join(output, "\n")
+}
+
+func convertInlineMath(line string) string {
+	var output strings.Builder
+	remaining := line
+	for {
+		start := strings.Index(remaining, `\(`)
+		if start == -1 {
+			output.WriteString(remaining)
+			break
+		}
+		output.WriteString(remaining[:start])
+		remaining = remaining[start+2:]
+		end := strings.Index(remaining, `\)`)
+		if end == -1 {
+			output.WriteString(`\(`)
+			output.WriteString(remaining)
+			break
+		}
+		output.WriteByte('$')
+		output.WriteString(remaining[:end])
+		output.WriteByte('$')
+		remaining = remaining[end+2:]
+	}
+	return output.String()
 }
 
 func stripMathpixTitle(lines []string) []string {
