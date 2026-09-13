@@ -30,7 +30,7 @@ x^2 + y^2
 $$
 ## Examples
 - A final sentence
-- ![Figure](figure.png)
+![Figure](figure.png)
 # Existing heading
 `
 
@@ -47,44 +47,57 @@ func TestConvertInlineMathLeavesUnmatchedDelimiterAlone(t *testing.T) {
 	}
 }
 
-func TestRenderMathpixMarkdownWrapsLatexEnvironmentsInMathBlocks(t *testing.T) {
+func TestRenderMathpixMarkdownConvertsMathpixStructures(t *testing.T) {
 	input := `Before.
 \begin{table}
-\begin{array}{cc}
-x & y \\
-\end{array}
+\captionsetup{labelformat=empty}
+\caption{■ TABLE 1 Results for \(x\)}
+\begin{tabular}[t]{|l|l|}
+\hline Name & Value \\
+\hline A & \(x^2\) \\
+\hline B & \[
+\begin{aligned}
+y & = 2 \\
+z & = 3
+\end{aligned}
+\] \\
+\hline Chart & ![](https://cdn.mathpix.com/diagram.png?height=10&width=20) \\
+\hline
+\end{tabular}
 \end{table}
 \begin{itemize}
-\item First item
-\item Second item
+\item[1.] First item with \(x\).
+\item Second item.
 \end{itemize}
 \begin{figure}
-\includegraphics{diagram.png}
+\captionsetup{labelformat=empty}
+\caption{■ FIGURE 1 A diagram of \(x\)}
+\includegraphics[alt={},max width=\textwidth]{https://cdn.mathpix.com/diagram.png}
 \end{figure}
 After.`
 	want := `- Before
-$$
-\begin{table}
-\begin{array}{cc}
-x & y \\
-\end{array}
-\end{table}
-$$
-$$
-\begin{itemize}
-\item First item
-\item Second item
-\end{itemize}
-$$
-$$
-\begin{figure}
-\includegraphics{diagram.png}
-\end{figure}
-$$
+| Name | Value |
+| --- | --- |
+| A | $x^2$ |
+| B | $\begin{aligned} y & = 2 \\ z & = 3 \end{aligned}$ |
+| Chart | ![](https://cdn.mathpix.com/diagram.png?height=10&width=20) |
+> *■ TABLE 1 Results for $x$*
+1. First item with $x$.
+- Second item.
+![](https://cdn.mathpix.com/diagram.png)
+> *■ FIGURE 1 A diagram of $x$*
 - After`
 
 	if got := renderMathpixMarkdown(input); got != want {
 		t.Fatalf("renderMathpixMarkdown() mismatch\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
+func TestRenderMathpixMarkdownPreservesDollarMathBlocks(t *testing.T) {
+	input := "Before.\n$$\nx^2 + y^2\n$$\nAfter."
+	want := "- Before\n$$\nx^2 + y^2\n$$\n- After"
+	if got := renderMathpixMarkdown(input); got != want {
+		t.Fatalf("renderMathpixMarkdown() = %q, want %q", got, want)
 	}
 }
 

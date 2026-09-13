@@ -56,5 +56,5 @@ PDF conversion writes its current phase to stderr, including `Sending PDF to Mat
 - Normal text becomes `- ` bullets. Each `. ` begins an indented child bullet, and a final period is removed.
 - Mathpix title metadata at the beginning of a document is omitted because the Obsidian filename supplies the note title.
 - Inline math becomes `$...$`; display-math delimiters become `$$` on their own lines.
-- LaTex tables, figures, and list environments are preserved inside `$$` blocks, including nested environments.
+- LaTex tables become Markdown pipe tables, lists become Markdown lists, and Mathpix figure URLs become image embeds with captions.
 - Display-math bodies are left untouched rather than being converted into list items.
