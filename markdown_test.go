@@ -47,6 +47,47 @@ func TestConvertInlineMathLeavesUnmatchedDelimiterAlone(t *testing.T) {
 	}
 }
 
+func TestRenderMathpixMarkdownWrapsLatexEnvironmentsInMathBlocks(t *testing.T) {
+	input := `Before.
+\begin{table}
+\begin{array}{cc}
+x & y \\
+\end{array}
+\end{table}
+\begin{itemize}
+\item First item
+\item Second item
+\end{itemize}
+\begin{figure}
+\includegraphics{diagram.png}
+\end{figure}
+After.`
+	want := `- Before
+$$
+\begin{table}
+\begin{array}{cc}
+x & y \\
+\end{array}
+\end{table}
+$$
+$$
+\begin{itemize}
+\item First item
+\item Second item
+\end{itemize}
+$$
+$$
+\begin{figure}
+\includegraphics{diagram.png}
+\end{figure}
+$$
+- After`
+
+	if got := renderMathpixMarkdown(input); got != want {
+		t.Fatalf("renderMathpixMarkdown() mismatch\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
 func TestRenderMathpixMarkdownPreservesNestedSentenceBullets(t *testing.T) {
 	input := "First. Second. Third."
 	want := "- First\n  - Second\n  - Third"

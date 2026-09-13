@@ -12,6 +12,7 @@ func renderMathpixMarkdown(markdown string) string {
 	lines := stripMathpixTitle(strings.Split(markdown, "\n"))
 	output := make([]string, 0, len(lines))
 	inBlockEquation := false
+	latexEnvironmentDepth := 0
 
 	for _, line := range lines {
 		if inBlockEquation {
@@ -23,9 +24,29 @@ func renderMathpixMarkdown(markdown string) string {
 			output = append(output, line)
 			continue
 		}
+		if latexEnvironmentDepth > 0 {
+			output = append(output, line)
+			starts, ends := mathEnvironmentCounts(line)
+			latexEnvironmentDepth += starts - ends
+			if latexEnvironmentDepth <= 0 {
+				output = append(output, "$$")
+				latexEnvironmentDepth = 0
+			}
+			continue
+		}
 		if line == `\[` {
 			output = append(output, "$$")
 			inBlockEquation = true
+			continue
+		}
+		starts, ends := mathEnvironmentCounts(line)
+		if starts > 0 {
+			output = append(output, "$$", line)
+			latexEnvironmentDepth = starts - ends
+			if latexEnvironmentDepth <= 0 {
+				output = append(output, "$$")
+				latexEnvironmentDepth = 0
+			}
 			continue
 		}
 		if heading, ok := markdownHeading(line); ok {
@@ -42,6 +63,20 @@ func renderMathpixMarkdown(markdown string) string {
 	}
 
 	return strings.Join(output, "\n")
+}
+
+func mathEnvironmentCounts(line string) (starts, ends int) {
+	for _, name := range []string{
+		"array", "cases", "matrix", "pmatrix", "bmatrix", "Bmatrix", "vmatrix", "Vmatrix", "smallmatrix",
+		"aligned", "alignedat", "gathered", "split", "multline", "equation", "equation*", "align", "align*",
+		"alignat", "alignat*", "flalign", "flalign*", "gather", "gather*", "multline*",
+		"tabular", "tabular*", "tabularx", "longtable", "table", "table*", "figure", "figure*",
+		"itemize", "enumerate", "description",
+	} {
+		starts += strings.Count(line, `\begin{`+name+`}`)
+		ends += strings.Count(line, `\end{`+name+`}`)
+	}
+	return starts, ends
 }
 
 func convertInlineMath(line string) string {
