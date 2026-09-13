@@ -24,10 +24,9 @@ A final sentence.
 `
 	want := `# Vectors
 - One sentence
-  - A second with $x^2$ and $y^2$
-$$
-x^2 + y^2
-$$
+	- A second with $x^2$ and $y^2$ $$
+		x^2 + y^2
+		$$
 ## Examples
 - A final sentence
 ![Figure](figure.png)
@@ -95,7 +94,7 @@ After.`
 
 func TestRenderMathpixMarkdownPreservesDollarMathBlocks(t *testing.T) {
 	input := "Before.\n$$\nx^2 + y^2\n$$\nAfter."
-	want := "- Before\n$$\nx^2 + y^2\n$$\n- After"
+	want := "- Before $$\n\tx^2 + y^2\n\t$$\n- After"
 	if got := renderMathpixMarkdown(input); got != want {
 		t.Fatalf("renderMathpixMarkdown() = %q, want %q", got, want)
 	}
@@ -103,9 +102,17 @@ func TestRenderMathpixMarkdownPreservesDollarMathBlocks(t *testing.T) {
 
 func TestRenderMathpixMarkdownPreservesNestedSentenceBullets(t *testing.T) {
 	input := "First. Second. Third."
-	want := "- First\n  - Second\n  - Third"
+	want := "- First\n\t- Second\n\t- Third"
 	if got := renderMathpixMarkdown(input); got != want {
 		t.Fatalf("renderMathpixMarkdown() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatExistingMarkdownNormalizesListsAndNestedMath(t *testing.T) {
+	input := "- Parent\n   - Child\n$$\nx^2 + y^2\n$$\n- Sibling\n  - Old child\n    - Deep child\n"
+	want := "- Parent\n\t- Child $$\n\t\tx^2 + y^2\n\t\t$$\n- Sibling\n\t- Old child\n\t\t- Deep child\n"
+	if got := formatExistingMarkdown(input); got != want {
+		t.Fatalf("formatExistingMarkdown() = %q, want %q", got, want)
 	}
 }
 

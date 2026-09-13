@@ -15,6 +15,7 @@ func main() {
 	vault := flag.String("vault", os.Getenv("OBSIDIAN_VAULT"), "Obsidian vault directory (defaults to OBSIDIAN_VAULT)")
 	name := flag.String("name", "", "note path relative to the vault, without or with .md")
 	overwrite := flag.Bool("overwrite", false, "replace an existing note")
+	formatVault := flag.Bool("format-vault", false, "rewrite Markdown notes in the vault using canonical list and math indentation")
 	timeout := flag.Duration("timeout", 10*time.Minute, "maximum time to wait for Mathpix")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: pdf-notes [options] <input.pdf|input.md>\n\n")
@@ -23,12 +24,25 @@ func main() {
 	}
 	flag.Parse()
 
+	if *vault == "" {
+		exitf("-vault or OBSIDIAN_VAULT is required")
+	}
+	if *formatVault {
+		if flag.NArg() != 0 {
+			exitf("-format-vault does not accept an input file")
+		}
+		paths, err := formatVaultNotes(*vault)
+		if err != nil {
+			exitf("%v", err)
+		}
+		for _, path := range paths {
+			fmt.Println(path)
+		}
+		return
+	}
 	if flag.NArg() != 1 {
 		flag.Usage()
 		os.Exit(2)
-	}
-	if *vault == "" {
-		exitf("-vault or OBSIDIAN_VAULT is required")
 	}
 
 	input := flag.Arg(0)

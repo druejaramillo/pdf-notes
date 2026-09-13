@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,27 +14,32 @@ func renderMathpixMarkdown(markdown string) string {
 	output := make([]string, 0, len(lines))
 	inBlockEquation := false
 	inDollarBlock := false
+	displayMathIndent := ""
 	latexEnvironmentDepth := 0
 
 	for _, line := range lines {
 		if inDollarBlock {
-			output = append(output, line)
 			if line == "$$" {
+				output = appendDisplayMathLine(output, displayMathIndent, "$$")
 				inDollarBlock = false
+				displayMathIndent = ""
+				continue
 			}
+			output = appendDisplayMathLine(output, displayMathIndent, line)
 			continue
 		}
 		if inBlockEquation {
 			if line == `\]` {
-				output = append(output, "$$")
+				output = appendDisplayMathLine(output, displayMathIndent, "$$")
 				inBlockEquation = false
+				displayMathIndent = ""
 				continue
 			}
-			output = append(output, line)
+			output = appendDisplayMathLine(output, displayMathIndent, line)
 			continue
 		}
 		if line == "$$" {
-			output = append(output, line)
+			displayMathIndent = beginDisplayMath(&output)
 			inDollarBlock = true
 			continue
 		}
@@ -48,7 +54,7 @@ func renderMathpixMarkdown(markdown string) string {
 			continue
 		}
 		if line == `\[` {
-			output = append(output, "$$")
+			displayMathIndent = beginDisplayMath(&output)
 			inBlockEquation = true
 			continue
 		}
@@ -80,6 +86,24 @@ func renderMathpixMarkdown(markdown string) string {
 	}
 
 	return strings.Join(output, "\n")
+}
+
+func beginDisplayMath(output *[]string) string {
+	if len(*output) > 0 {
+		if indent, ok := markdownListIndent((*output)[len(*output)-1]); ok {
+			(*output)[len(*output)-1] += " $$"
+			return indent + "\t"
+		}
+	}
+	*output = append(*output, "$$")
+	return ""
+}
+
+func appendDisplayMathLine(output []string, indent, line string) []string {
+	if indent == "" {
+		return append(output, line)
+	}
+	return append(output, indent+strings.TrimLeft(line, " \t"))
 }
 
 func mathEnvironmentCounts(line string) (starts, ends int) {
@@ -611,7 +635,170 @@ func normalizeListIndent(line string) string {
 	if tabs == 0 || !strings.HasPrefix(line[tabs:], "- ") {
 		return line
 	}
-	return strings.Repeat("  ", tabs) + line[tabs:]
+	return strings.Repeat("\t", tabs) + line[tabs:]
+}
+
+type listIndentation struct {
+	width int
+	level int
+}
+
+func formatVaultNotes(vault string) ([]string, error) {
+	changed := make([]string, 0)
+	err := filepath.WalkDir(vault, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".obsidian" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".md" {
+			return nil
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read note %q: %w", path, err)
+		}
+		formatted := formatExistingMarkdown(string(content))
+		if formatted == string(content) {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("inspect note %q: %w", path, err)
+		}
+		if err := os.WriteFile(path, []byte(formatted), info.Mode()); err != nil {
+			return fmt.Errorf("write note %q: %w", path, err)
+		}
+		changed = append(changed, path)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("format vault %q: %w", vault, err)
+	}
+	return changed, nil
+}
+
+func formatExistingMarkdown(markdown string) string {
+	lines := strings.Split(markdown, "\n")
+	output := make([]string, 0, len(lines))
+	listStack := make([]listIndentation, 0)
+	inDisplayMath := false
+	mathIndent := ""
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if inDisplayMath {
+			if trimmed == "$$" || trimmed == `\]` {
+				if mathIndent == "" {
+					output = append(output, "$$")
+				} else {
+					output = append(output, mathIndent+"$$")
+				}
+				inDisplayMath, mathIndent = false, ""
+				continue
+			}
+			if mathIndent == "" {
+				output = append(output, line)
+			} else {
+				output = append(output, mathIndent+strings.TrimLeft(line, " \t"))
+			}
+			continue
+		}
+
+		if trimmed == "$$" || trimmed == `\[` {
+			if len(output) > 0 {
+				if indent, ok := markdownListIndent(output[len(output)-1]); ok {
+					output[len(output)-1] += " $$"
+					inDisplayMath, mathIndent = true, indent+"\t"
+					continue
+				}
+			}
+			output = append(output, "$$")
+			inDisplayMath = true
+			continue
+		}
+
+		if normalized, indent, ok := normalizeExistingList(line, &listStack); ok {
+			output = append(output, normalized)
+			if strings.HasSuffix(strings.TrimSpace(normalized), "$$") {
+				inDisplayMath, mathIndent = true, indent+"\t"
+			}
+			continue
+		}
+		output = append(output, line)
+	}
+
+	return strings.Join(output, "\n")
+}
+
+func normalizeExistingList(line string, stack *[]listIndentation) (string, string, bool) {
+	indentEnd := 0
+	width := 0
+	for indentEnd < len(line) {
+		switch line[indentEnd] {
+		case '\t':
+			width += 4
+		case ' ':
+			width++
+		default:
+			goto prefixDone
+		}
+		indentEnd++
+	}
+
+prefixDone:
+	if !isMarkdownListMarker(line[indentEnd:]) {
+		return "", "", false
+	}
+	level := canonicalListLevel(width, *stack)
+	*stack = append((*stack)[:level], listIndentation{width: width, level: level})
+	indent := strings.Repeat("\t", level)
+	return indent + line[indentEnd:], indent, true
+}
+
+func canonicalListLevel(width int, stack []listIndentation) int {
+	if width == 0 {
+		return 0
+	}
+	if len(stack) == 0 {
+		return 1
+	}
+	for index := len(stack) - 1; index >= 0; index-- {
+		if stack[index].width == width {
+			return stack[index].level
+		}
+		if stack[index].width < width {
+			return stack[index].level + 1
+		}
+	}
+	return 1
+}
+
+func markdownListIndent(line string) (string, bool) {
+	index := 0
+	for index < len(line) && (line[index] == ' ' || line[index] == '\t') {
+		index++
+	}
+	if !isMarkdownListMarker(line[index:]) {
+		return "", false
+	}
+	return line[:index], true
+}
+
+func isMarkdownListMarker(line string) bool {
+	if len(line) >= 2 && (line[0] == '-' || line[0] == '*' || line[0] == '+') && line[1] == ' ' {
+		return true
+	}
+	index := 0
+	for index < len(line) && line[index] >= '0' && line[index] <= '9' {
+		index++
+	}
+	return index > 0 && index+1 < len(line) && line[index] == '.' && line[index+1] == ' '
 }
 
 func writeNote(vault, name, content string, overwrite bool) (string, error) {

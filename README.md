@@ -48,12 +48,19 @@ pdf-notes -vault "$HOME/Documents/Vault" -name "Textbook/Chapter 4" chapter.mmd
 
 `-name` accepts a path relative to the vault, so the example creates `Textbook/Chapter 4.md`. Existing notes are protected by default; use `-overwrite` to replace one.
 
+To normalize existing vault notes, including nested-list and display-math indentation:
+
+```sh
+pdf-notes -vault "$HOME/Documents/Vault" -format-vault
+```
+
 PDF conversion writes its current phase to stderr, including `Sending PDF to Mathpix...`. If it does not reach that message, the local PDF is still being read into the upload request. If it reaches that message and then errors, the error identifies the network or Mathpix response failure.
 
 ## Output Rules
 
 - `\section`, `\subsection`, and `\subsubsection` become `#`, `##`, and `###` headings.
 - Normal text becomes `- ` bullets. Each `. ` begins an indented child bullet, and a final period is removed.
+- Nested bullets use tabs; a display equation immediately following a list item is indented one additional level beneath it.
 - Mathpix title metadata at the beginning of a document is omitted because the Obsidian filename supplies the note title.
 - Inline math becomes `$...$`; display-math delimiters become `$$` on their own lines.
 - LaTex tables become Markdown pipe tables, lists become Markdown lists, and Mathpix figure URLs become image embeds with captions.
